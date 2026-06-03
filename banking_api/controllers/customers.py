@@ -1,49 +1,47 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from database import get_db
+import services.customer_service as service
 from models.models import CustomerCreate, CustomerUpdate, CustomerResponse
-import services.customer_service as customer_service
 
 router = APIRouter(prefix="/api/customers", tags=["Customers"])
 
 
 @router.get("", response_model=list[CustomerResponse])
-def get_all_customers():
-    return customer_service.get_all_customers()
-
-
-@router.get("/premium", response_model=list[CustomerResponse])
-def get_all_premium_customers():
-    return customer_service.get_premium_customers()
+def get_all(db: Session = Depends(get_db)):
+    return service.get_all_customers(db)
 
 
 @router.get("/search", response_model=list[CustomerResponse])
-def get_customer_by_name(name: str = Query(...)):
-    return customer_service.get_customer_by_name(name)
+def search(name: str = Query(...), db: Session = Depends(get_db)):
+    return service.get_customer_by_name(db, name)
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
-def get_customer_by_id(customer_id: int):
-    result = customer_service.get_customer_by_id(customer_id)
+def get_by_id(customer_id: int, db: Session = Depends(get_db)):
+    result = service.get_customer_by_id(db, customer_id)
     if not result:
         raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found.")
     return result
 
 
 @router.post("", response_model=CustomerResponse, status_code=201)
-def create_customer(payload: CustomerCreate):
-    return customer_service.create_customer(payload)
+def create(payload: CustomerCreate, db: Session = Depends(get_db)):
+    return service.create_customer(db, payload)
 
 
 @router.put("/{customer_id}", response_model=CustomerResponse)
-def update_customer(customer_id: int, payload: CustomerUpdate):
-    result = customer_service.update_customer(customer_id, payload)
+def update(customer_id: int, payload: CustomerUpdate, db: Session = Depends(get_db)):
+    result = service.update_customer(db, customer_id, payload)
     if not result:
         raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found.")
     return result
 
 
 @router.delete("/{customer_id}", status_code=200)
-def delete_customer(customer_id: int):
-    success = customer_service.delete_customer(customer_id)
+def delete(customer_id: int, db: Session = Depends(get_db)):
+    success = service.delete_customer(db, customer_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found.")
-    return {"message": f"Customer {customer_id} and all associated accounts deleted."}
+    return {"message": f"Customer {customer_id} deleted."}

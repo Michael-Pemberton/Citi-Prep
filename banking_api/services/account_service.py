@@ -1,59 +1,71 @@
-from models.models import AccountCreate, AccountUpdate, AccountResponse
-import repository.data_store as store
+from sqlalchemy.orm import Session
+from repository.db_models import Account, Customer
+from models.models import AccountCreate, AccountUpdate
 
 
-def get_all_accounts() -> list[AccountResponse]:
-    return [AccountResponse(**a) for a in store.accounts]
+def get_all_accounts(db: Session):
+    return db.query(Account).all()
 
 
-def get_account_by_id(account_id: int) -> AccountResponse | None:
-    account = next((a for a in store.accounts if a["id"] == account_id), None)
-    if not account:
-        return None
-    return AccountResponse(**account)
+def get_account_by_id(db: Session, account_id: int):
+    return db.query(Account).filter(Account.id == account_id).first()
 
 
-def get_account_by_name(name: str) -> list[AccountResponse]:
-    matched_ids = {
-        c["id"]
-        for c in store.customers
-        if name.lower() in c["name"].lower()
-    }
-    results = [a for a in store.accounts if a["customer_id"] in matched_ids]
-    return [AccountResponse(**a) for a in results]
+def get_account_by_name(db: Session, name: str):
+    return (
+        db.query(Account)
+        .join(Customer)
+        .filter(Customer.name.contains(name))
+        .all()
+    )
 
 
-def create_account(payload: AccountCreate) -> AccountResponse | None:
-    customer = next((c for c in store.customers if c["id"] == payload.customer_id), None)
+def create_account(db: Session, payload: AccountCreate):
+    customer = db.query(Customer).filter(Customer.id == payload.customer_id).first()
+
     if not customer:
         return None
-    new_account = {
-        "id": store.next_account_id(),
-        "account_number": payload.account_number,
-        "account_type": payload.account_type,
-        "balance": payload.balance,
-        "customer_id": payload.customer_id,
-    }
-    store.accounts.append(new_account)
-    return AccountResponse(**new_account)
+
+    account = Account(
+        account_number=payload.account_number,
+        account_type=payload.account_type,
+        balance=payload.balance,
+        customer_id=payload.customer_id
+    )
+
+    db.add(account)
+    db.commit()
+    db.refresh(account)
+
+    return account
 
 
-def update_account(account_id: int, payload: AccountUpdate) -> AccountResponse | None:
-    account = next((a for a in store.accounts if a["id"] == account_id), None)
+def update_account(db: Session, account_id: int, payload: AccountUpdate):
+    account = db.query(Account).filter(Account.id == account_id).first()
+
     if not account:
         return None
-    if payload.account_number is not None:
-        account["account_number"] = payload.account_number
-    if payload.account_type is not None:
-        account["account_type"] = payload.account_type
+
+    if payload.account_number:
+        account.account_number = payload.account_number
+    if payload.account_type:
+        account.account_type = payload.account_type
     if payload.balance is not None:
-        account["balance"] = payload.balance
-    return AccountResponse(**account)
+        account.balance = payload.balance
+
+    db.commit()
+    db.refresh(account)
+
+    return account
 
 
-def delete_account(account_id: int) -> bool:
-    account = next((a for a in store.accounts if a["id"] == account_id), None)
+def delete_account(db: Session, account_id: int):
+    account = db.query(Account).filter(Account.id == account_id).first()
+
     if not account:
         return False
-    store.accounts.remove(account)
+
+    db.delete(account)
+    db.commit()
+
     return True

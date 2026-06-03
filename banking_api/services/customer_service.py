@@ -1,72 +1,87 @@
+from sqlalchemy.orm import Session
+from repository.db_models import Customer, Account
 from models.models import CustomerCreate, CustomerUpdate, CustomerResponse, AccountResponse
-import repository.data_store as store
-
-PREMIUM_THRESHOLD = 10_000.00
 
 
-def _build_response(customer: dict) -> CustomerResponse:
-    accts = [
-        AccountResponse(**a)
-        for a in store.accounts
-        if a["customer_id"] == customer["id"]
-    ]
-    return CustomerResponse(**customer, accounts=accts)
+PREMIUM_THRESHOLD = 10_000
 
 
-def get_all_customers() -> list[CustomerResponse]:
-    return [_build_response(c) for c in store.customers]
+def _to_response(customer: Customer) -> CustomerResponse:
+    return CustomerResponse(
+        id=customer.id,
+        name=customer.name,
+        email=customer.email,
+        accounts=[
+            AccountResponse(
+                id=a.id,
+                account_number=a.account_number,
+                account_type=a.account_type,
+                balance=float(a.balance),
+                customer_id=a.customer_id
+            )
+            for a in customer.accounts
+        ]
+    )
 
 
-def get_customer_by_id(customer_id: int) -> CustomerResponse | None:
-    customer = next((c for c in store.customers if c["id"] == customer_id), None)
-    if not customer:
-        return None
-    return _build_response(customer)
+def get_all_customers(db: Session):
+    return db.query(Customer).all()
 
 
-def get_customer_by_name(name: str) -> list[CustomerResponse]:
-    matches = [c for c in store.customers if name.lower() in c["name"].lower()]
-    return [_build_response(c) for c in matches]
+def get_customer_by_id(db: Session, customer_id: int):
+    return db.query(Customer).filter(Customer.id == customer_id).first()
 
 
-def get_premium_customers() -> list[CustomerResponse]:
+def get_customer_by_name(db: Session, name: str):
+    return db.query(Customer).filter(Customer.name.contains(name)).all()
+
+
+def get_premium_customers(db: Session):
+    customers = db.query(Customer).all()
+
     result = []
-    for customer in store.customers:
-        total = sum(
-            a["balance"]
-            for a in store.accounts
-            if a["customer_id"] == customer["id"]
-        )
+    for c in customers:
+        total = sum(a.balance for a in c.accounts)
         if total > PREMIUM_THRESHOLD:
-            result.append(_build_response(customer))
+            result.append(c)
+
     return result
 
 
-def create_customer(payload: CustomerCreate) -> CustomerResponse:
-    new_customer = {
-        "id": store.next_customer_id(),
-        "name": payload.name,
-        "email": payload.email,
-    }
-    store.customers.append(new_customer)
-    return _build_response(new_customer)
+def create_customer(db: Session, payload: CustomerCreate):
+    customer = Customer(name=payload.name, email=payload.email)
+
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+
+    return customer
 
 
-def update_customer(customer_id: int, payload: CustomerUpdate) -> CustomerResponse | None:
-    customer = next((c for c in store.customers if c["id"] == customer_id), None)
+def update_customer(db: Session, customer_id: int, payload: CustomerUpdate):
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+
     if not customer:
         return None
-    if payload.name is not None:
-        customer["name"] = payload.name
-    if payload.email is not None:
-        customer["email"] = payload.email
-    return _build_response(customer)
+
+    if payload.name:
+        customer.name = payload.name
+    if payload.email:
+        customer.email = payload.email
+
+    db.commit()
+    db.refresh(customer)
+
+    return customer
 
 
-def delete_customer(customer_id: int) -> bool:
-    customer = next((c for c in store.customers if c["id"] == customer_id), None)
+def delete_customer(db: Session, customer_id: int):
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+
     if not customer:
         return False
-    store.accounts[:] = [a for a in store.accounts if a["customer_id"] != customer_id]
-    store.customers.remove(customer)
+
+    db.delete(customer)
+    db.commit()
+
     return True

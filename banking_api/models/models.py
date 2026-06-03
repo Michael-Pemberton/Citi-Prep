@@ -4,8 +4,8 @@ from enum import Enum
 
 
 class AccountType(str, Enum):
-    savings = "Savings"
-    checking = "Checking"
+    Savings = "Savings"
+    Checking = "Checking"
 
 
 # --- Request / Response Models ---

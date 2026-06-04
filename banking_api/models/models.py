@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from enum import Enum
 
@@ -14,7 +14,7 @@ class AccountCreate(BaseModel):
     account_number: str
     account_type: AccountType
     balance: float
-    customer_id: int
+    customer_id: str  # MongoDB ObjectId as string
 
 
 class AccountUpdate(BaseModel):
@@ -24,11 +24,11 @@ class AccountUpdate(BaseModel):
 
 
 class AccountResponse(BaseModel):
-    id: int
+    id: str
     account_number: str
     account_type: AccountType
     balance: float
-    customer_id: int
+    customer_id: str
 
 
 class CustomerCreate(BaseModel):
@@ -42,7 +42,7 @@ class CustomerUpdate(BaseModel):
 
 
 class CustomerResponse(BaseModel):
-    id: int
+    id: str
     name: str
     email: str
     accounts: List[AccountResponse] = []

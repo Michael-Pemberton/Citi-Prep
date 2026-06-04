@@ -1,39 +1,30 @@
 import os
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from motor.motor_asyncio import AsyncIOMotorClient
 
 load_dotenv()
 
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT")
-DB_NAME = os.getenv("DB_NAME")
+MONGODB_URI = os.getenv("MONGODB_URI")
+DB_NAME = os.getenv("DB_NAME", "bankdb")
 
-DATABASE_URL = (
-    f"mysql+pymysql://{DB_USER}:"
-    f"{DB_PASSWORD}@{DB_HOST}:"
-    f"{DB_PORT}/{DB_NAME}"
-)
+client: AsyncIOMotorClient = None
+db = None
 
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True
-)
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
+async def connect_db():
+    global client, db
+    client = AsyncIOMotorClient(MONGODB_URI)
+    db = client[DB_NAME]
+    # Create unique indexes
+    await db.customers.create_index("email", unique=True)
+    await db.accounts.create_index("account_number", unique=True)
 
-Base = declarative_base()
+
+async def close_db():
+    global client
+    if client:
+        client.close()
 
 
 def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    return db

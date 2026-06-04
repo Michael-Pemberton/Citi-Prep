@@ -1,19 +1,34 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from controllers.customers import router as customers_router
 from controllers.accounts import router as accounts_router
-from database import Base, engine
-from repository.db_models import Customer, Account
+from database import connect_db, close_db
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await connect_db()
+    yield
+    await close_db()
 
 
 app = FastAPI(
     title="Banking REST API",
-    description="A Banking REST API built with FastAPI.",
-    version="1.0.0",
+    description="A Banking REST API built with FastAPI and MongoDB Atlas.",
+    version="2.0.0",
+    lifespan=lifespan,
 )
 
-Base.metadata.create_all(bind=engine)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Restrict to your Vercel frontend URL in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Register routers (Controllers)
+# Register routers
 app.include_router(customers_router)
 app.include_router(accounts_router)
 

@@ -1,71 +1,83 @@
-from sqlalchemy.orm import Session
-from repository.db_models import Account, Customer
-from models.models import AccountCreate, AccountUpdate
+from bson import ObjectId
+from bson.errors import InvalidId
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from models.models import AccountCreate, AccountUpdate, AccountResponse
 
 
-def get_all_accounts(db: Session):
-    return db.query(Account).all()
-
-
-def get_account_by_id(db: Session, account_id: int):
-    return db.query(Account).filter(Account.id == account_id).first()
-
-
-def get_account_by_name(db: Session, name: str):
-    return (
-        db.query(Account)
-        .join(Customer)
-        .filter(Customer.name.contains(name))
-        .all()
+def _doc_to_response(doc: dict) -> AccountResponse:
+    return AccountResponse(
+        id=str(doc["_id"]),
+        account_number=doc["account_number"],
+        account_type=doc["account_type"],
+        balance=float(doc["balance"]),
+        customer_id=str(doc["customer_id"]),
     )
 
 
-def create_account(db: Session, payload: AccountCreate):
-    customer = db.query(Customer).filter(Customer.id == payload.customer_id).first()
+async def get_all_accounts(db: AsyncIOMotorDatabase):
+    cursor = db.accounts.find()
+    return [_doc_to_response(doc) async for doc in cursor]
 
+
+async def get_account_by_id(db: AsyncIOMotorDatabase, account_id: str):
+    try:
+        oid = ObjectId(account_id)
+    except InvalidId:
+        return None
+    doc = await db.accounts.find_one({"_id": oid})
+    return _doc_to_response(doc) if doc else None
+
+
+async def get_account_by_name(db: AsyncIOMotorDatabase, name: str):
+    # Find customers matching name, then find their accounts
+    customer_cursor = db.customers.find({"name": {"$regex": name, "$options": "i"}})
+    customer_ids = [doc["_id"] async for doc in customer_cursor]
+    if not customer_ids:
+        return []
+    cursor = db.accounts.find({"customer_id": {"$in": customer_ids}})
+    return [_doc_to_response(doc) async for doc in cursor]
+
+
+async def create_account(db: AsyncIOMotorDatabase, payload: AccountCreate):
+    try:
+        customer_oid = ObjectId(payload.customer_id)
+    except InvalidId:
+        return None
+    customer = await db.customers.find_one({"_id": customer_oid})
     if not customer:
         return None
-
-    account = Account(
-        account_number=payload.account_number,
-        account_type=payload.account_type,
-        balance=payload.balance,
-        customer_id=payload.customer_id
-    )
-
-    db.add(account)
-    db.commit()
-    db.refresh(account)
-
-    return account
+    doc = {
+        "account_number": payload.account_number,
+        "account_type": payload.account_type,
+        "balance": payload.balance,
+        "customer_id": customer_oid,
+    }
+    result = await db.accounts.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return _doc_to_response(doc)
 
 
-def update_account(db: Session, account_id: int, payload: AccountUpdate):
-    account = db.query(Account).filter(Account.id == account_id).first()
-
-    if not account:
+async def update_account(db: AsyncIOMotorDatabase, account_id: str, payload: AccountUpdate):
+    try:
+        oid = ObjectId(account_id)
+    except InvalidId:
         return None
-
-    if payload.account_number:
-        account.account_number = payload.account_number
-    if payload.account_type:
-        account.account_type = payload.account_type
-    if payload.balance is not None:
-        account.balance = payload.balance
-
-    db.commit()
-    db.refresh(account)
-
-    return account
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not updates:
+        doc = await db.accounts.find_one({"_id": oid})
+        return _doc_to_response(doc) if doc else None
+    result = await db.accounts.find_one_and_update(
+        {"_id": oid},
+        {"$set": updates},
+        return_document=True,
+    )
+    return _doc_to_response(result) if result else None
 
 
-def delete_account(db: Session, account_id: int):
-    account = db.query(Account).filter(Account.id == account_id).first()
-
-    if not account:
+async def delete_account(db: AsyncIOMotorDatabase, account_id: str):
+    try:
+        oid = ObjectId(account_id)
+    except InvalidId:
         return False
-
-    db.delete(account)
-    db.commit()
-
-    return True
+    result = await db.accounts.delete_one({"_id": oid})
+    return result.deleted_count > 0

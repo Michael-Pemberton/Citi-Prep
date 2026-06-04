@@ -22,7 +22,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict to your Vercel frontend URL in production
+    allow_origins=["https://citi-prep-deployment.vercel.app"],  # Restrict to your Vercel frontend URL in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
